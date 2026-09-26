@@ -1,0 +1,53 @@
+server:
+  port: ${SERVER_PORT:8081}
+
+spring:
+  application:
+    name: payment-simulator-service
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/payment_simulator}
+    username: ${SPRING_DATASOURCE_USERNAME:simulator_user}
+    password: ${SPRING_DATASOURCE_PASSWORD:simulator_secret}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      connection-timeout: 20000
+  artemis:
+    broker-url: ${ARTEMIS_BROKER_URL:tcp://localhost:61616}
+    user: ${ARTEMIS_USER:artemis}
+    password: ${ARTEMIS_PASSWORD:artemis_secret}
+    mode: native
+    pool:
+      enabled: true
+      max-connections: 10
+
+simulator:
+  security:
+    internal-secret: ${INTERNAL_API_SECRET:internal_service_secret_bridge_99x}
+  workers:
+    core-pool-size: ${WORKER_CORE_POOL_SIZE:8}
+    max-pool-size: ${WORKER_MAX_POOL_SIZE:16}
+    queue-capacity: ${WORKER_QUEUE_CAPACITY:500}
+    keep-alive-seconds: 60
+  queues:
+    payment: "payment.queue"
+    payment-retry: "payment.retry.queue"
+    payment-failed: "payment.failed.queue"
+    notification: "notification.queue"
+    refund: "refund.queue"
+  retry:
+    max-attempts: ${MAX_PAYMENT_RETRIES:3}
+    backoff-delay-ms: 1000
+  simulation:
+    failure-mode: ${SIMULATED_FAILURE_MODE:NONE} # NONE, RANDOM_TRANSIENT, DETERMINISTIC_FIRST_ATTEMPT, PERMANENT_FAILURE
+    failure-rate: ${SIMULATED_FAILURE_RATE:0.0}
+    processing-delay-ms: ${SIMULATED_PROCESSING_DELAY_MS:100}
+
+logging:
+  level:
+    root: INFO
+    com.simulator.payment: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} [txn=%X{transactionId}] [corr=%X{correlationId}] - %msg%n"

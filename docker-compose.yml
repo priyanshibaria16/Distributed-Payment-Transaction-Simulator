@@ -1,0 +1,117 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: sim_postgres
+    environment:
+      POSTGRES_DB: payment_simulator
+      POSTGRES_USER: simulator_user
+      POSTGRES_PASSWORD: simulator_secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U simulator_user -d payment_simulator"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - payment-net
+
+  artemis:
+    image: apache/activemq-artemis:2.35.0-alpine
+    container_name: sim_artemis
+    environment:
+      ARTEMIS_USER: artemis
+      ARTEMIS_PASSWORD: artemis_secret
+      EXTRA_ARGS: --http-host 0.0.0.0 --relax-jolokia
+    ports:
+      - "61616:61616" # Artemis Core/JMS
+      - "8161:8161"   # Artemis Web Console
+    volumes:
+      - artemis_data:/var/lib/artemis/data
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "61616"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - payment-net
+
+  payment-services:
+    build:
+      context: ./java-services
+      dockerfile: Dockerfile
+    container_name: sim_payment_services
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/payment_simulator
+      SPRING_DATASOURCE_USERNAME: simulator_user
+      SPRING_DATASOURCE_PASSWORD: simulator_secret
+      ARTEMIS_BROKER_URL: tcp://artemis:61616
+      ARTEMIS_USER: artemis
+      ARTEMIS_PASSWORD: artemis_secret
+      SERVER_PORT: 8081
+      INTERNAL_API_SECRET: internal_service_secret_bridge_99x
+      WORKER_CORE_POOL_SIZE: 8
+      WORKER_MAX_POOL_SIZE: 16
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      artemis:
+        condition: service_healthy
+    networks:
+      - payment-net
+
+  gateway-go:
+    build:
+      context: ./gateway-go
+      dockerfile: Dockerfile
+    container_name: sim_gateway_go
+    environment:
+      GATEWAY_PORT: 8080
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: payment_simulator
+      DB_USER: simulator_user
+      DB_PASSWORD: simulator_secret
+      DB_SSLMODE: disable
+      JAVA_COMMAND_SERVICE_URL: http://payment-services:8081
+      INTERNAL_API_SECRET: internal_service_secret_bridge_99x
+      JWT_SECRET: super_secret_jwt_key_payment_sim_2026_x99!
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      payment-services:
+        condition: service_started
+    networks:
+      - payment-net
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: sim_frontend
+    environment:
+      VITE_API_BASE_URL: http://localhost:8080/api/v1
+    ports:
+      - "5173:5173"
+    depends_on:
+      - gateway-go
+    networks:
+      - payment-net
+
+volumes:
+  postgres_data:
+  artemis_data:
+
+networks:
+  payment-net:
+    driver: bridge
